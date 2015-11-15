@@ -1,0 +1,21 @@
+{
+  "name": "sal-stack-nanostack-slip",
+  "version": "0.0.1",
+  "description": "SLIP Protocol for NanoStack",
+  "keywords": [
+    "SLIP",
+    "UART",
+    "NanoStack"
+  ],
+  "author": "Devaraj Ranganna <Devaraj.Ranganna@arm.com>",
+  "homepage": "https://github.com/ARMmbed/sal-stack-nanostack-slip",
+  "licenses": [
+    {
+      "url": "https://spdx.org/licenses/Apache-2.0",
+      "type": "Apache-2.0"
+    }
+  ],
+  "dependencies": {
+      "mbed-mesh-api": "~1.0.0"
+  }
+}
