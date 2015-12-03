@@ -16,6 +16,7 @@
     }
   ],
   "dependencies": {
-      "mbed-mesh-api": "~1.0.0"
+      "sal-stack-nanostack": "^3.0.0",
+      "mbed-drivers": "^0.11.5"
   }
 }
