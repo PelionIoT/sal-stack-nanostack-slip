@@ -23,12 +23,22 @@
 
 static SlipMACDriver * _pslipmacdriver;
 
-SlipMACDriver::SlipMACDriver(PinName tx, PinName rx) : RawSerial(tx,rx)
+SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, uint8_t *mac) : RawSerial(tx,rx)
 {
     _pslipmacdriver = this;
     slip_rx_buflen = 0;
     slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
-    for(uint8_t i =0; i < 8; i++)
+
+	// User MAC-48
+	if (mac != NULL) {
+		for (uint8_t i = 0; i < sizeof(slip_mac); ++i) {
+			slip_mac[i] = mac[i];
+		}
+		return;
+	}
+    
+	// Pseudo MAC-48
+	for(uint8_t i =0; i < sizeof(slip_mac); ++i)
         slip_mac[i] = i+1;
 }
 
@@ -149,7 +159,7 @@ void slip_rx()
                         break;
                         case SLIP_END:  // end sync marker
                             arm_net_phy_rx(IPV6_DATAGRAM, _pslipmacdriver->slip_rx_buf, _pslipmacdriver->slip_rx_buflen, 0x80, 0, _pslipmacdriver->net_slip_id);
-                            tr_debug("Pushed %d bytes of data to stack", slip_rx_buflen);
+                            //tr_debug("Pushed %d bytes of data to stack", slip_rx_buflen);
                             _pslipmacdriver->slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
                             _pslipmacdriver->slip_rx_buflen = 0;
 
