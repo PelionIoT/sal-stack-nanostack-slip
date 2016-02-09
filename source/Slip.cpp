@@ -23,22 +23,13 @@
 
 static SlipMACDriver * _pslipmacdriver;
 
-SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, uint8_t *mac) : RawSerial(tx,rx)
+SlipMACDriver::SlipMACDriver(PinName tx, PinName rx) : RawSerial(tx,rx)
 {
     _pslipmacdriver = this;
     slip_rx_buflen = 0;
     slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
 
-	// User MAC-48
-	if (mac != NULL) {
-		for (uint8_t i = 0; i < sizeof(slip_mac); ++i) {
-			slip_mac[i] = mac[i];
-		}
-		return;
-	}
-    
-	// Pseudo MAC-48
-	for(uint8_t i =0; i < sizeof(slip_mac); ++i)
+   	for(uint8_t i =0; i < sizeof(slip_mac); i++)
         slip_mac[i] = i+1;
 }
 
@@ -259,10 +250,16 @@ void SlipMACDriver::rxIrq(void)
     }
 }
 
-int8_t SlipMACDriver::Slip_Init(void)
+int8_t SlipMACDriver::Slip_Init(uint8_t *mac)
 {
     SlipBuffer *pTmpSlipBuffer;
 
+    if (mac != NULL) {
+        for (uint8_t i = 0; i < sizeof(slip_mac); ++i) {
+            slip_mac[i] = mac[i];
+        }
+    }
+	
     //Build driver data structure
     slip_phy_driver.PHY_MAC = slip_mac;
     slip_phy_driver.link_type = PHY_LINK_TUN;

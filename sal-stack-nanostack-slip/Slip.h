@@ -43,11 +43,11 @@ struct SlipBuffer {
 class SlipMACDriver : public RawSerial
 {
 public:
-    SlipMACDriver(PinName tx, PinName rx, uint8_t *mac = NULL);
+    SlipMACDriver(PinName tx, PinName rx);
 
     virtual ~SlipMACDriver();
 
-    int8_t Slip_Init(void);
+    int8_t Slip_Init(uint8_t *mac = NULL);
 
     friend int8_t slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e data_flow);
     friend void slip_rx();
