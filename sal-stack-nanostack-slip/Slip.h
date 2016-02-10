@@ -45,9 +45,9 @@ class SlipMACDriver : public RawSerial
 public:
     SlipMACDriver(PinName tx, PinName rx);
 
-    ~SlipMACDriver();
+    virtual ~SlipMACDriver();
 
-    int8_t Slip_Init(void);
+    int8_t Slip_Init(uint8_t *mac = NULL);
 
     friend int8_t slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e data_flow);
     friend void slip_rx();
@@ -62,7 +62,7 @@ private:
     uint16_t slip_rx_buflen;
     slip_rx_state_t slip_rx_state;
 
-    uint8_t slip_mac[8];
+    uint8_t slip_mac[6];
 
     SlipBuffer* pCurSlipTxBuffer;
 
