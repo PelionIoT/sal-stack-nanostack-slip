@@ -28,9 +28,7 @@ SlipMACDriver::SlipMACDriver(PinName tx, PinName rx) : RawSerial(tx,rx)
     _pslipmacdriver = this;
     slip_rx_buflen = 0;
     slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
-
-   	for(uint8_t i =0; i < sizeof(slip_mac); i++)
-        slip_mac[i] = i+1;
+	memset(slip_mac, 0, sizeof(slip_mac));
 }
 
 SlipMACDriver::~SlipMACDriver()
@@ -255,10 +253,16 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac)
     SlipBuffer *pTmpSlipBuffer;
 
     if (mac != NULL) {
+		// Assign user submitted MAC value
         for (uint8_t i = 0; i < sizeof(slip_mac); ++i) {
             slip_mac[i] = mac[i];
         }
-    }
+    } else {
+		// Generate pseudo value for MAC
+        for(uint8_t i = 0; i < sizeof(slip_mac); ++i) {
+            slip_mac[i] = i+1;
+		}
+	}
 	
     //Build driver data structure
     slip_phy_driver.PHY_MAC = slip_mac;
