@@ -25,7 +25,7 @@ typedef enum
     SLIP_RX_STATE_ESCAPED
 } slip_rx_state_t;
 
-#define SLIP_TX_RX_MAX_BUFLEN 1280 // SLIP MTU
+#define SLIP_TX_RX_MAX_BUFLEN 1500 // SLIP MTU
 #define SLIP_NR_BUFFERS 20
 
 #define SLIP_END 0xC0
