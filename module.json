@@ -1,11 +1,11 @@
 {
   "name": "sal-stack-nanostack-slip",
-  "version": "0.0.1",
-  "description": "SLIP Protocol for NanoStack",
+  "version": "1.0.0",
+  "description": "SLIP driver for Nanostack",
   "keywords": [
     "SLIP",
     "UART",
-    "NanoStack"
+    "Nanostack"
   ],
   "author": "Devaraj Ranganna <Devaraj.Ranganna@arm.com>",
   "homepage": "https://github.com/ARMmbed/sal-stack-nanostack-slip",
@@ -16,7 +16,7 @@
     }
   ],
   "dependencies": {
-      "sal-stack-nanostack": "^3.0.0",
-      "mbed-drivers": "^0.11.5"
+      "sal-stack-nanostack": "^4.0.2",
+      "mbed-drivers": "~0.12.2"
   }
 }
