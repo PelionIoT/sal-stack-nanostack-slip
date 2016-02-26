@@ -15,73 +15,68 @@
  */
 
 #include "mbed-drivers/mbed.h"
+#include "mbed-client-libservice/platform/arm_hal_interrupt.h"
 #include "core-util/CriticalSectionLock.h"
 #include "sal-stack-nanostack-slip/Slip.h"
 //#define HAVE_DEBUG 1
 #include "ns_trace.h"
 #define TRACE_GROUP  "slip"
 
-static SlipMACDriver * _pslipmacdriver;
+static SlipMACDriver *_pslipmacdriver;
 
-SlipMACDriver::SlipMACDriver(PinName tx, PinName rx) : RawSerial(tx,rx)
+SlipMACDriver::SlipMACDriver(PinName tx, PinName rx) : RawSerial(tx, rx)
 {
     _pslipmacdriver = this;
     slip_rx_buflen = 0;
     slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
-	memset(slip_mac, 0, sizeof(slip_mac));
+    memset(slip_mac, 0, sizeof(slip_mac));
 }
 
 SlipMACDriver::~SlipMACDriver()
 {
-    RawSerial::attach(NULL, Serial::RxIrq);
-    RawSerial::attach(NULL, Serial::TxIrq);
+    attach(NULL, RxIrq);
+    attach(NULL, TxIrq);
 }
 
-int8_t slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e data_flow)
+int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e data_flow)
 {
     (void) data_flow;
     SlipBuffer *pTxBuf = NULL;
     uint16_t txBuflen = 0;
 
     //Remove TUN Header
-    if(len > 4)
-    {
-        buf+=4;
-        len-=4;
+    if (len > 4) {
+        buf += 4;
+        len -= 4;
     }
 
-    //TODO: error case needs to be handled
-    if(len > SLIP_TX_RX_MAX_BUFLEN)
-        return 0;
+    tr_debug("slip_if_tx(): datalen = %d", len);
 
-    tr_debug("slip_if_tx: datalen = %d",len);
+    //TODO: error case needs to be handled
+    if (len > SLIP_TX_RX_MAX_BUFLEN) {
+        return 0;
+    }
 
     {
         mbed::util::CriticalSectionLock lock;
         bool bufValid = _pslipmacdriver->pTxSlipBufferFreeList.pop(pTxBuf);
         //TODO: No more free TX buffers??
-        if(!bufValid)
+        if (!bufValid) {
             return 0;
+        }
     }
 
     pTxBuf->buf[txBuflen++] = SLIP_END;
-    while(len--)
-    {
-        if (*buf == SLIP_END)
-        {
+    while (len--) {
+        if (*buf == SLIP_END) {
             pTxBuf->buf[txBuflen++] = SLIP_ESC;
             pTxBuf->buf[txBuflen++] = SLIP_ESC_END;
             buf++;
-        }
-        else
-        if (*buf == SLIP_ESC)
-        {
+        } else if (*buf == SLIP_ESC) {
             pTxBuf->buf[txBuflen++] = SLIP_ESC;
             pTxBuf->buf[txBuflen++] = SLIP_ESC_ESC;
             buf++;
-        }
-        else
-        {
+        } else {
             pTxBuf->buf[txBuflen++] = *buf++;
         }
     }
@@ -94,7 +89,7 @@ int8_t slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e dat
         _pslipmacdriver->pTxSlipBufferToTxFuncList.push(pTxBuf);
     }
 
-    _pslipmacdriver->RawSerial::attach(_pslipmacdriver, &SlipMACDriver::txIrq, Serial::TxIrq);
+    _pslipmacdriver->attach(_pslipmacdriver, &SlipMACDriver::txIrq, TxIrq);
 
     // success callback
     arm_net_phy_tx_done(_pslipmacdriver->net_slip_id, tx_id, PHY_LINK_TX_SUCCESS, 0, 0);
@@ -102,109 +97,22 @@ int8_t slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e dat
     return 0;
 }
 
-void slip_rx()
-{
-    SlipBuffer* pRxSlipBuffer = NULL;
-
-    while(1)
-    {
-        {
-            mbed::util::CriticalSectionLock lock;
-            bool bufValid = _pslipmacdriver->pRxSlipBufferToRxFuncList.pop(pRxSlipBuffer);
-            if(!bufValid)
-                break;
-        }
-
-        if(pRxSlipBuffer->length > SLIP_TX_RX_MAX_BUFLEN)
-        {
-            _pslipmacdriver->slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
-            _pslipmacdriver->slip_rx_buflen = 0;
-
-            {
-                mbed::util::CriticalSectionLock lock;
-                _pslipmacdriver->pRxSlipBufferFreeList.push(pRxSlipBuffer);
-            }
-
-            continue;
-        }
-
-        for(int i = 0; i <= pRxSlipBuffer->length; i++)
-        {
-            switch(_pslipmacdriver->slip_rx_state)
-            {
-                case SLIP_RX_STATE_SYNCSEARCH:
-                    if (pRxSlipBuffer->buf[i] == SLIP_END)  // initial sync marker
-                    {
-                        _pslipmacdriver->slip_rx_state = SLIP_RX_STATE_SYNCED;
-                        _pslipmacdriver->slip_rx_buflen = 0;
-                    }
-                break;
-
-                case SLIP_RX_STATE_SYNCED:
-                    switch(pRxSlipBuffer->buf[i])
-                    {
-                        case SLIP_ESC:  // escaped byte coming
-                            _pslipmacdriver->slip_rx_state = SLIP_RX_STATE_ESCAPED;
-                        break;
-                        case SLIP_END:  // end sync marker
-                            arm_net_phy_rx(IPV6_DATAGRAM, _pslipmacdriver->slip_rx_buf, _pslipmacdriver->slip_rx_buflen, 0x80, 0, _pslipmacdriver->net_slip_id);
-                            //tr_debug("Pushed %d bytes of data to stack", slip_rx_buflen);
-                            _pslipmacdriver->slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
-                            _pslipmacdriver->slip_rx_buflen = 0;
-
-                            {
-                                mbed::util::CriticalSectionLock lock;
-                                _pslipmacdriver->pRxSlipBufferFreeList.push(pRxSlipBuffer);
-                            }
-
-                        break;
-
-                        default:
-                            _pslipmacdriver->slip_rx_buf[_pslipmacdriver->slip_rx_buflen++] = pRxSlipBuffer->buf[i];
-                    }
-                break;
-
-                case SLIP_RX_STATE_ESCAPED:
-                    switch(pRxSlipBuffer->buf[i])
-                    {
-                        case SLIP_ESC_END:
-                            _pslipmacdriver->slip_rx_buf[_pslipmacdriver->slip_rx_buflen++] = SLIP_END;
-                        break;
-                        case SLIP_ESC_ESC:
-                            _pslipmacdriver->slip_rx_buf[_pslipmacdriver->slip_rx_buflen++] = SLIP_ESC;
-                        break;
-                        default:
-                            _pslipmacdriver->slip_rx_buf[_pslipmacdriver->slip_rx_buflen++] = pRxSlipBuffer->buf[i];
-                    }
-                    // return to unescaped processing
-                    _pslipmacdriver->slip_rx_state = SLIP_RX_STATE_SYNCED;
-                break;
-            }
-        }
-    }
-}
-
 void SlipMACDriver::txIrq(void)
 {
     static int i = 0;
-    static SlipBuffer* pTxSlipBuffer = NULL;
+    static SlipBuffer *pTxSlipBuffer = NULL;
 
-    if(!pTxSlipBuffer)
-    {
-        if(!pTxSlipBufferToTxFuncList.pop(pTxSlipBuffer))
-        {
-            RawSerial::attach(NULL, Serial::TxIrq);
+    if (!pTxSlipBuffer) {
+        if (!pTxSlipBufferToTxFuncList.pop(pTxSlipBuffer)) {
+            attach(NULL, TxIrq);
             return;
         }
     }
 
-    if(pTxSlipBuffer->buf)
-    {
-        while(serial_writable(&_serial))
-        {
-            serial_putc(&_serial, (int)(pTxSlipBuffer->buf[i++]));
-            if(i == pTxSlipBuffer->length)
-            {
+    if (pTxSlipBuffer->buf) {
+        while (writeable()) {
+            _base_putc(pTxSlipBuffer->buf[i++]);
+            if (i == pTxSlipBuffer->length) {
                 i = 0;
                 pTxSlipBufferFreeList.push(pTxSlipBuffer);
                 pTxSlipBuffer = NULL;
@@ -214,37 +122,72 @@ void SlipMACDriver::txIrq(void)
     }
 }
 
+void SlipMACDriver::process_rx_byte(uint8_t character)
+{
+    if (character == SLIP_END) {
+        if (slip_rx_buflen > 0) {
+            platform_interrupts_disabled();
+            arm_net_phy_rx(IPV6_DATAGRAM, slip_rx_buf, slip_rx_buflen, 0x80, 0, net_slip_id);
+            platform_interrupts_enabling();
+        }
+        slip_rx_buflen = 0;
+        slip_rx_state = SLIP_RX_STATE_SYNCED;
+        return;
+    }
+
+    if (slip_rx_state == SLIP_RX_STATE_SYNCSEARCH) {
+        return;
+    }
+
+    if (character == SLIP_ESC) {
+        slip_rx_state = SLIP_RX_STATE_ESCAPED;
+        return;
+    }
+
+    if (slip_rx_state == SLIP_RX_STATE_ESCAPED) {
+        switch (character) {
+            case SLIP_ESC_END:
+                character = SLIP_END;
+                break;
+            case SLIP_ESC_ESC:
+                character = SLIP_ESC;
+                break;
+            default:
+                break;
+        }
+        slip_rx_state = SLIP_RX_STATE_SYNCED;
+    }
+
+    if (slip_rx_buflen < sizeof slip_rx_buf) {
+        slip_rx_buf[slip_rx_buflen++] = character;
+    } else {
+        // Buffer overrun - abandon frame
+        slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
+        slip_rx_buflen = 0;
+    }
+}
+
+void SlipMACDriver::print_serial_error()
+{
+    tr_error("** Serial error, drop packet...");
+}
+
 void SlipMACDriver::rxIrq(void)
 {
-    uint8_t character;
-    static uint32_t stateSync = 0, rxbuflen = 0;
-    static SlipBuffer* pTmpBuf;
+    //bool err = error();
+    bool err = 0;
 
-    character = (uint8_t) serial_getc(&_serial);
-    if(character == SLIP_END && stateSync == 0)
-    {
-        if(!pRxSlipBufferFreeList.pop(pTmpBuf))
-            return;
+    if (err && slip_rx_state != SLIP_RX_STATE_SYNCSEARCH) {
+        slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
+        minar::Scheduler::postCallback(mbed::util::FunctionPointer0<void>(print_serial_error).bind())
+        .tolerance(minar::milliseconds(1));
+    }
 
-        stateSync = 1;
-        pTmpBuf->buf[rxbuflen++] = character;
-    }
-    else if(character == SLIP_END && stateSync == 1)
-    {
-        pTmpBuf->buf[rxbuflen] = character;
-        pTmpBuf->length = rxbuflen;
-        rxbuflen = stateSync = 0;
-        pRxSlipBufferToRxFuncList.push(pTmpBuf);
-        minar::Scheduler::postCallback(mbed::util::FunctionPointer0<void>(slip_rx).bind())
-            .tolerance(minar::milliseconds(1));
-    }
-    else if(stateSync == 1)
-    {
-        pTmpBuf->buf[rxbuflen++] = character;
-    }
-    else
-    {
-        //igonre unsynchronized data
+    while (readable()) {
+        uint8_t character = _base_getc();
+        if (!err) {
+            process_rx_byte(character);
+        }
     }
 }
 
@@ -253,23 +196,23 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac)
     SlipBuffer *pTmpSlipBuffer;
 
     if (mac != NULL) {
-		// Assign user submitted MAC value
+        // Assign user submitted MAC value
         for (uint8_t i = 0; i < sizeof(slip_mac); ++i) {
             slip_mac[i] = mac[i];
         }
     } else {
-		// Generate pseudo value for MAC
-        for(uint8_t i = 0; i < sizeof(slip_mac); ++i) {
-            slip_mac[i] = i+1;
-		}
-	}
-	
+        // Generate pseudo value for MAC
+        for (uint8_t i = 0; i < sizeof(slip_mac); ++i) {
+            slip_mac[i] = i + 2;
+        }
+    }
+
     //Build driver data structure
     slip_phy_driver.PHY_MAC = slip_mac;
     slip_phy_driver.link_type = PHY_LINK_TUN;
     slip_phy_driver.data_request_layer = IPV6_DATAGRAMS_DATA_FLOW;
     slip_phy_driver.driver_description = (char *)"SLIP";
-    slip_phy_driver.phy_MTU = SLIP_TX_RX_MAX_BUFLEN;
+    slip_phy_driver.phy_MTU = 0;
     slip_phy_driver.phy_tail_length = 0;
     slip_phy_driver.phy_header_length = 0;
     slip_phy_driver.state_control = 0;
@@ -277,29 +220,16 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac)
     slip_phy_driver.address_write = 0;
     slip_phy_driver.extension = 0;
 
-    // define and bring up interface
+    // define and bring up the interface
     net_slip_id = arm_net_phy_register(&slip_phy_driver);
 
     // init rx state machine
-    tr_debug("SLIP driver id: %d\r\n",net_slip_id);
+    tr_debug("SLIP driver id: %d\r\n", net_slip_id);
 
-    for(int i = 0; i < SLIP_NR_BUFFERS; i++)
-    {
+    for (int i = 0; i < SLIP_NR_BUFFERS; i++) {
         pTmpSlipBuffer = new SlipBuffer;
 
-        for(int j = 0; j < SLIP_TX_RX_MAX_BUFLEN; j++)
-            pTmpSlipBuffer->buf[j] = 0;
-        pTmpSlipBuffer->length = 0;
-
-        pRxSlipBufferFreeList.push(pTmpSlipBuffer);
-    }
-
-    for(int i = 0; i < SLIP_NR_BUFFERS; i++)
-    {
-        pTmpSlipBuffer = new SlipBuffer;
-
-        for(int j = 0; j < SLIP_TX_RX_MAX_BUFLEN; j++)
-            pTmpSlipBuffer->buf[j] = 0;
+        memset(pTmpSlipBuffer->buf, 0, sizeof pTmpSlipBuffer->buf);
         pTmpSlipBuffer->length = 0;
 
         pTxSlipBufferFreeList.push(pTmpSlipBuffer);
@@ -307,7 +237,6 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac)
 
     baud(115200);
 
-    RawSerial::attach(this, &SlipMACDriver::rxIrq, Serial::RxIrq);
-
+    attach(this, &SlipMACDriver::rxIrq, RxIrq);
     return net_slip_id;
 }
