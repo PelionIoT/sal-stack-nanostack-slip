@@ -17,6 +17,6 @@
   ],
   "dependencies": {
       "sal-stack-nanostack": "^4.0.2",
-      "mbed-drivers": "~0.12.2"
+      "mbed-drivers": "^1.0.0"
   }
 }
