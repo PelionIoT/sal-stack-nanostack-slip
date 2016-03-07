@@ -1,6 +1,6 @@
 {
   "name": "sal-stack-nanostack-slip",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "SLIP driver for Nanostack",
   "keywords": [
     "SLIP",
@@ -16,7 +16,7 @@
     }
   ],
   "dependencies": {
-      "sal-stack-nanostack": "^4.0.2",
-      "mbed-drivers": "^1.0.0"
+    "sal-stack-nanostack": "^4.0.2",
+    "mbed-drivers": "^1.0.0"
   }
 }
