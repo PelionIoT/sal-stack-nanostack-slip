@@ -25,9 +25,11 @@
 
 static SlipMACDriver *_pslipmacdriver;
 
-SlipMACDriver::SlipMACDriver(PinName tx, PinName rx) : RawSerial(tx, rx)
+SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) : RawSerial(tx, rx)
 {
     _pslipmacdriver = this;
+    if(rts != NC && cts != NC)
+    	set_flow_control(RTSCTS, rts, cts);
     slip_rx_buflen = 0;
     slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
     memset(slip_mac, 0, sizeof(slip_mac));
@@ -192,7 +194,7 @@ void SlipMACDriver::rxIrq(void)
     }
 }
 
-int8_t SlipMACDriver::Slip_Init(uint8_t *mac)
+int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
 {
     SlipBuffer *pTmpSlipBuffer;
 
@@ -236,7 +238,7 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac)
         pTxSlipBufferFreeList.push(pTmpSlipBuffer);
     }
 
-    baud(115200);
+    baud(backhaulBaud);
 
     attach(this, &SlipMACDriver::rxIrq, RxIrq);
     return net_slip_id;
