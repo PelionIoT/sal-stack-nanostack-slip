@@ -49,12 +49,6 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     SlipBuffer *pTxBuf = NULL;
     uint16_t txBuflen = 0;
 
-    //Remove TUN Header
-    if (len > 4) {
-        buf += 4;
-        len -= 4;
-    }
-
     tr_debug("slip_if_tx(): datalen = %d", len);
 
     //TODO: error case needs to be handled
@@ -217,19 +211,13 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
     }
 
     //Build driver data structure
+    memset(&slip_phy_driver, 0, sizeof(phy_device_driver_s));
+
     slip_phy_driver.PHY_MAC = slip_mac;
-    slip_phy_driver.link_type = PHY_LINK_TUN;
+    slip_phy_driver.link_type = PHY_LINK_SLIP;
     slip_phy_driver.data_request_layer = IPV6_DATAGRAMS_DATA_FLOW;
     slip_phy_driver.driver_description = (char *)"SLIP";
-    slip_phy_driver.phy_MTU = 0;
-    slip_phy_driver.phy_tail_length = 0;
-    slip_phy_driver.phy_header_length = 0;
-    slip_phy_driver.state_control = 0;
     slip_phy_driver.tx = slip_if_tx;
-    slip_phy_driver.phy_rx_cb = NULL;
-    slip_phy_driver.phy_tx_done_cb = NULL;
-    slip_phy_driver.address_write = 0;
-    slip_phy_driver.extension = 0;
     drv = &slip_phy_driver;
 
     // define and bring up the interface
