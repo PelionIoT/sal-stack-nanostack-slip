@@ -25,11 +25,13 @@
 
 static SlipMACDriver *_pslipmacdriver;
 
+static phy_device_driver_s *drv;
+
 SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) : RawSerial(tx, rx)
 {
     _pslipmacdriver = this;
     if(rts != NC && cts != NC)
-    	set_flow_control(RTSCTS, rts, cts);
+        set_flow_control(RTSCTS, rts, cts);
     slip_rx_buflen = 0;
     slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
     memset(slip_mac, 0, sizeof(slip_mac));
@@ -46,12 +48,6 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     (void) data_flow;
     SlipBuffer *pTxBuf = NULL;
     uint16_t txBuflen = 0;
-
-    //Remove TUN Header
-    if (len > 4) {
-        buf += 4;
-        len -= 4;
-    }
 
     tr_debug("slip_if_tx(): datalen = %d", len);
 
@@ -95,7 +91,9 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     _pslipmacdriver->attach(_pslipmacdriver, &SlipMACDriver::txIrq, TxIrq);
 
     // success callback
-    arm_net_phy_tx_done(_pslipmacdriver->net_slip_id, tx_id, PHY_LINK_TX_SUCCESS, 0, 0);
+    if( drv->phy_tx_done_cb ){
+        drv->phy_tx_done_cb(_pslipmacdriver->net_slip_id, tx_id, PHY_LINK_TX_SUCCESS, 0, 0);
+    }
 
     return 0;
 }
@@ -130,7 +128,9 @@ void SlipMACDriver::process_rx_byte(uint8_t character)
     if (character == SLIP_END) {
         if (slip_rx_buflen > 0) {
             platform_interrupts_disabled();
-            arm_net_phy_rx(IPV6_DATAGRAM, slip_rx_buf, slip_rx_buflen, 0x80, 0, net_slip_id);
+            if( slip_phy_driver.phy_rx_cb ){
+                slip_phy_driver.phy_rx_cb(slip_rx_buf, slip_rx_buflen, 0x80, 0, net_slip_id);
+            }
             platform_interrupts_enabling();
         }
         slip_rx_buflen = 0;
@@ -211,17 +211,14 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
     }
 
     //Build driver data structure
+    memset(&slip_phy_driver, 0, sizeof(phy_device_driver_s));
+
     slip_phy_driver.PHY_MAC = slip_mac;
-    slip_phy_driver.link_type = PHY_LINK_TUN;
+    slip_phy_driver.link_type = PHY_LINK_SLIP;
     slip_phy_driver.data_request_layer = IPV6_DATAGRAMS_DATA_FLOW;
     slip_phy_driver.driver_description = (char *)"SLIP";
-    slip_phy_driver.phy_MTU = 0;
-    slip_phy_driver.phy_tail_length = 0;
-    slip_phy_driver.phy_header_length = 0;
-    slip_phy_driver.state_control = 0;
     slip_phy_driver.tx = slip_if_tx;
-    slip_phy_driver.address_write = 0;
-    slip_phy_driver.extension = 0;
+    drv = &slip_phy_driver;
 
     // define and bring up the interface
     net_slip_id = arm_net_phy_register(&slip_phy_driver);
