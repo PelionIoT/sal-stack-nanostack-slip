@@ -1,0 +1,10 @@
+{
+	"name": "slip",
+	"config": {
+		"pins_LED1": "NC",
+		"pins_SERIAL_TX": "NC",
+      	"pins_SERIAL_RX": "NC",
+      	"pins_SERIAL_CTS": "NC",
+      	"pins_SERIAL_RTS": "NC"
+	}
+}
