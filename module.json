@@ -1,6 +1,6 @@
 {
   "name": "sal-stack-nanostack-slip",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "SLIP driver for Nanostack",
   "keywords": [
     "SLIP",
