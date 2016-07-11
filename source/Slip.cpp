@@ -40,7 +40,7 @@ static phy_device_driver_s *drv;
 SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) : RawSerial(tx, rx)
 {
     _pslipmacdriver = this;
-#if DEVICE_SERIAL_FC
+#if DEVICE_SERIAL_FC || defined(YOTTA_CFG_THREAD_TEST_APP_SLIP_SERIAL_HW_FLOW_CONTROL)
     if(rts != NC && cts != NC) {
        set_flow_control(RTSCTS, rts, cts);
     }
