@@ -15,9 +15,11 @@
  * limitations under the License.
  */
 
-#include "mbed-drivers/mbed.h"
 #ifndef MBED_CONF_RTOS_PRESENT
+#include "mbed-drivers/mbed.h"
 #include "core-util/CriticalSectionLock.h"
+#else
+#include "mbed.h"
 #endif
 #include "mbed-client-libservice/platform/arm_hal_interrupt.h"
 #include "sal-stack-nanostack-slip/Slip.h"
