@@ -15,24 +15,24 @@
  * limitations under the License.
  */
 
-#ifndef MBED_CONF_RTOS_PRESENT
-#include "mbed-drivers/mbed.h"
-#include "core-util/CriticalSectionLock.h"
-#else
 #include "mbed.h"
-#endif
 #include "mbed-client-libservice/platform/arm_hal_interrupt.h"
 #include "sal-stack-nanostack-slip/Slip.h"
 //#define HAVE_DEBUG 1
 #include "ns_trace.h"
-#ifdef MBED_CONF_RTOS_PRESENT
-#define SIG_SL_TX       1
-#define SIG_SL_RX       2
-#include "cmsis_os.h"
-static osThreadId slip_thread_id;
+#include "cmsis_os2.h"
+#include "rtx_os.h"
+
+static osThreadId_t slip_thread_id;
+// Statically allocate size for worker thread
+static uint64_t slip_thread_stk[512];
+static osRtxThread_t slip_thread_tcb;
+static osThreadAttr_t slip_thread_attr = {0};
+
+#define SIG_SL_RX       0x0001U
+
 static void slip_if_lock(void);
 static void slip_if_unlock(void);
-#endif
 
 #define TRACE_GROUP  "slip"
 
@@ -72,16 +72,11 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     }
 
     {
-#ifndef MBED_CONF_RTOS_PRESENT
-        mbed::util::CriticalSectionLock lock;
-#else
         core_util_critical_section_enter();
-#endif
 
         bool bufValid = _pslipmacdriver->pTxSlipBufferFreeList.pop(pTxBuf);
-#ifdef MBED_CONF_RTOS_PRESENT
         core_util_critical_section_exit();
-#endif
+
         //TODO: No more free TX buffers??
         if (!bufValid) {
             tr_error("Ran out of TX Buffers.");
@@ -93,18 +88,12 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     pTxBuf->length = len;
 
     {
-#ifndef MBED_CONF_RTOS_PRESENT
-        mbed::util::CriticalSectionLock lock;
-#else
         core_util_critical_section_enter();
-#endif
         _pslipmacdriver->pTxSlipBufferToTxFuncList.push(pTxBuf);
-#ifdef MBED_CONF_RTOS_PRESENT
         core_util_critical_section_exit();
-#endif
     }
 
-    _pslipmacdriver->attach(_pslipmacdriver, &SlipMACDriver::txIrq, TxIrq);
+//TODO:    _pslipmacdriver->attach(_pslipmacdriver, &SlipMACDriver::txIrq, TxIrq);
 
     // success callback
     if( drv->phy_tx_done_cb ){
@@ -191,18 +180,9 @@ void SlipMACDriver::process_rx_byte(uint8_t character)
     if (character == SLIP_END) {
         if (pCurSlipRxBuffer && pCurSlipRxBuffer->length > 0) {
 
-#ifndef MBED_CONF_RTOS_PRESENT
-            platform_interrupts_disabled();
-            slip_if_rx(pCurSlipRxBuffer);
-            platform_interrupts_enabling();
-            // can just reuse buffer
-            pCurSlipRxBuffer->length = 0;
-#else
             pRxSlipBufferToRxFuncList.push(pCurSlipRxBuffer);
             pCurSlipRxBuffer = NULL;
-            osSignalSet(slip_thread_id, SIG_SL_RX);
-#endif
-
+            osThreadFlagsSet(slip_thread_id, SIG_SL_RX);
         }
         slip_rx_state = SLIP_RX_STATE_SYNCED;
         return;
@@ -258,11 +238,6 @@ void SlipMACDriver::rxIrq(void)
     bool err = 0;
     if (err && slip_rx_state != SLIP_RX_STATE_SYNCSEARCH) {
         slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
-#ifndef MBED_CONF_RTOS_PRESENT
-        minar::Scheduler::postCallback(
-                mbed::util::FunctionPointer0<void>(print_serial_error).bind()).tolerance(
-                minar::milliseconds(1));
-#endif
     }
 
     while (readable()) {
@@ -313,12 +288,9 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
 
     baud(backhaulBaud);
 
-    attach(this, &SlipMACDriver::rxIrq, RxIrq);
+    attach(callback(this, &SlipMACDriver::rxIrq));
 
-
-#ifdef MBED_CONF_RTOS_PRESENT
-_pslipmacdriver->SLIP_IRQ_Thread_Create();
-#endif
+    _pslipmacdriver->SLIP_IRQ_Thread_Create();
 
     return net_slip_id;
 }
@@ -352,8 +324,6 @@ void SlipMACDriver::buffer_handover()
     }
 }
 
-#ifdef MBED_CONF_RTOS_PRESENT
-
 static void slip_if_lock(void)
 {
     platform_enter_critical();
@@ -364,15 +334,14 @@ static void slip_if_unlock(void)
     platform_exit_critical();
 }
 
-static void SLIP_IRQ_Thread(const void *x)
+static __NO_RETURN void SLIP_IRQ_Thread(void *arg)
 {
+    (void)arg;
     for (;;) {
-        osEvent event = osSignalWait(0, osWaitForever);
-        if (event.status != osEventSignal) {
-            continue;
-        }
+        uint32_t event = osThreadFlagsWait(SIG_SL_RX, osFlagsWaitAny, osWaitForever);
+
         slip_if_lock();
-        if (event.value.signals & SIG_SL_RX) {
+        if (event & SIG_SL_RX) {
             _pslipmacdriver->buffer_handover();
         }
         slip_if_unlock();
@@ -381,9 +350,9 @@ static void SLIP_IRQ_Thread(const void *x)
 
 void SlipMACDriver::SLIP_IRQ_Thread_Create(void)
 {
-    static osThreadDef(SLIP_IRQ_Thread, osPriorityAboveNormal, 512);
-    slip_thread_id = osThreadCreate(osThread(SLIP_IRQ_Thread), NULL);
+    slip_thread_attr.stack_mem  = &slip_thread_stk[0];
+    slip_thread_attr.cb_mem  = &slip_thread_tcb;
+    slip_thread_attr.stack_size = sizeof(slip_thread_stk);
+    slip_thread_attr.cb_size = sizeof(slip_thread_tcb);
+    slip_thread_id = osThreadNew(SLIP_IRQ_Thread, NULL, &slip_thread_attr);
 }
-
-
-#endif
