@@ -18,7 +18,6 @@
 #include "mbed.h"
 #include "mbed-client-libservice/platform/arm_hal_interrupt.h"
 #include "sal-stack-nanostack-slip/Slip.h"
-//#define HAVE_DEBUG 1
 #include "ns_trace.h"
 #include "cmsis_os2.h"
 #include "rtx_os.h"
@@ -71,29 +70,25 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
         return 0;
     }
 
-    {
-        core_util_critical_section_enter();
+    core_util_critical_section_enter();
 
-        bool bufValid = _pslipmacdriver->pTxSlipBufferFreeList.pop(pTxBuf);
-        core_util_critical_section_exit();
+    bool bufValid = _pslipmacdriver->pTxSlipBufferFreeList.pop(pTxBuf);
+    core_util_critical_section_exit();
 
-        //TODO: No more free TX buffers??
-        if (!bufValid) {
-            tr_error("Ran out of TX Buffers.");
-            return 0;
-        }
+    //TODO: No more free TX buffers??
+    if (!bufValid) {
+        tr_error("Ran out of TX Buffers.");
+        return 0;
     }
 
     memcpy(pTxBuf->buf, buf, len);
     pTxBuf->length = len;
 
-    {
-        core_util_critical_section_enter();
-        _pslipmacdriver->pTxSlipBufferToTxFuncList.push(pTxBuf);
-        core_util_critical_section_exit();
-    }
+    core_util_critical_section_enter();
+    _pslipmacdriver->pTxSlipBufferToTxFuncList.push(pTxBuf);
+    core_util_critical_section_exit();
 
-//TODO:    _pslipmacdriver->attach(_pslipmacdriver, &SlipMACDriver::txIrq, TxIrq);
+    _pslipmacdriver->attach(_pslipmacdriver, &SlipMACDriver::txIrq, TxIrq);
 
     // success callback
     if( drv->phy_tx_done_cb ){
