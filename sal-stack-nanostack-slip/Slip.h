@@ -78,7 +78,7 @@ struct SlipBuffer {
     size_t length;
 };
 
-class SlipMACDriver : public RawSerial {
+class SlipMACDriver : public UnbufferedSerial {
 public:
     SlipMACDriver(PinName tx, PinName rx, PinName rts = NC, PinName cts = NC);
     virtual ~SlipMACDriver();

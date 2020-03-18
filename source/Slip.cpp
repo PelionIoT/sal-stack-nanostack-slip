@@ -38,7 +38,7 @@ static void slip_if_unlock(void);
 static SlipMACDriver *_pslipmacdriver;
 static phy_device_driver_s *drv;
 
-SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) : RawSerial(tx, rx)
+SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) : UnbufferedSerial(tx, rx)
 {
     _pslipmacdriver = this;
 #if DEVICE_SERIAL_FC || defined(YOTTA_CFG_THREAD_TEST_APP_SLIP_SERIAL_HW_FLOW_CONTROL)
@@ -63,7 +63,7 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     (void) data_flow;
     SlipBuffer *pTxBuf;
 
-    tr_debug("slip_if_tx(): datalen = %d", len);
+    //tr_debug("slip_if_tx(): datalen = %d", len);
 
     //TODO: error case needs to be handled
     if (len > SLIP_TX_RX_MAX_BUFLEN) {
@@ -158,7 +158,7 @@ bool SlipMACDriver::tx_one_byte(void)
             return false;
     }
 
-    _base_putc(byte);
+    write(&byte, 1);
 
     if (slip_tx_state == SLIP_TX_STATE_END) {
         return false;
@@ -231,14 +231,16 @@ void SlipMACDriver::print_serial_error()
 void SlipMACDriver::rxIrq(void)
 {
     bool err = 0;
+    uint8_t buf[1];
+
     if (err && slip_rx_state != SLIP_RX_STATE_SYNCSEARCH) {
         slip_rx_state = SLIP_RX_STATE_SYNCSEARCH;
     }
 
     while (readable()) {
-        uint8_t character = _base_getc();
+        read(buf, 1);
         if (!err) {
-            process_rx_byte(character);
+            process_rx_byte(buf[0]);
         }
     }
 }
