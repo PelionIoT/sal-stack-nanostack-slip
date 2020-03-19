@@ -54,8 +54,7 @@ SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) :
 
 SlipMACDriver::~SlipMACDriver()
 {
-    attach(NULL, RxIrq);
-    attach(NULL, TxIrq);
+    attach(NULL);
 }
 
 int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e data_flow)
@@ -88,7 +87,7 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     _pslipmacdriver->pTxSlipBufferToTxFuncList.push(pTxBuf);
     core_util_critical_section_exit();
 
-    _pslipmacdriver->attach(callback(_pslipmacdriver, &SlipMACDriver::txIrq), TxIrq);
+    _pslipmacdriver->attach(callback(_pslipmacdriver, &SlipMACDriver::slipIrq));
 
     // success callback
     if( drv->phy_tx_done_cb ){
@@ -102,7 +101,7 @@ void SlipMACDriver::txIrq(void)
 {
     if (!pCurSlipTxBuffer) {
         if (!pTxSlipBufferToTxFuncList.pop(pCurSlipTxBuffer)) {
-            attach(NULL, TxIrq);
+            attach(NULL);
             return;
         }
         slip_tx_count = 0;
@@ -245,6 +244,17 @@ void SlipMACDriver::rxIrq(void)
     }
 }
 
+void SlipMACDriver::slipIrq(void)
+{
+    if (readable()) {
+        rxIrq();
+    }
+
+    if (writable()) {
+        txIrq();
+    }
+}
+
 int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
 {
     if (mac != NULL) {
@@ -285,7 +295,7 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
 
     baud(backhaulBaud);
 
-    attach(callback(this, &SlipMACDriver::rxIrq));
+    attach(callback(this, &SlipMACDriver::slipIrq));
 
     _pslipmacdriver->SLIP_IRQ_Thread_Create();
 
