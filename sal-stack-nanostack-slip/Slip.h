@@ -78,7 +78,7 @@ struct SlipBuffer {
     size_t length;
 };
 
-class SlipMACDriver : public RawSerial {
+class SlipMACDriver : public UnbufferedSerial {
 public:
     SlipMACDriver(PinName tx, PinName rx, PinName rts = NC, PinName cts = NC);
     virtual ~SlipMACDriver();
@@ -91,6 +91,7 @@ private:
     // Interrupt routines for UART rx/tx interrupts
     void rxIrq(void);
     void txIrq(void);
+    void slipIrq(void);
     void process_rx_byte(uint8_t character);
     bool tx_one_byte();
     void slip_if_rx(const SlipBuffer *rx_buf) const;
