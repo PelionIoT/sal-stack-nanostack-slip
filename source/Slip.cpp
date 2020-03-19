@@ -37,8 +37,11 @@ static void slip_if_unlock(void);
 
 static SlipMACDriver *_pslipmacdriver;
 static phy_device_driver_s *drv;
-
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
 SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) : UnbufferedSerial(tx, rx)
+#else
+SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) : RawSerial(tx, rx)
+#endif
 {
     _pslipmacdriver = this;
 #if DEVICE_SERIAL_FC || defined(YOTTA_CFG_THREAD_TEST_APP_SLIP_SERIAL_HW_FLOW_CONTROL)
@@ -54,7 +57,12 @@ SlipMACDriver::SlipMACDriver(PinName tx, PinName rx, PinName rts, PinName cts) :
 
 SlipMACDriver::~SlipMACDriver()
 {
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
     attach(NULL);
+#else
+    attach(NULL, RxIrq);
+    attach(NULL, TxIrq);
+#endif
 }
 
 int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data_protocol_e data_flow)
@@ -87,7 +95,11 @@ int8_t SlipMACDriver::slip_if_tx(uint8_t *buf, uint16_t len, uint8_t tx_id, data
     _pslipmacdriver->pTxSlipBufferToTxFuncList.push(pTxBuf);
     core_util_critical_section_exit();
 
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
     _pslipmacdriver->attach(callback(_pslipmacdriver, &SlipMACDriver::slipIrq));
+#else
+    _pslipmacdriver->attach(callback(_pslipmacdriver, &SlipMACDriver::txIrq), TxIrq);
+#endif
 
     // success callback
     if( drv->phy_tx_done_cb ){
@@ -101,7 +113,11 @@ void SlipMACDriver::txIrq(void)
 {
     if (!pCurSlipTxBuffer) {
         if (!pTxSlipBufferToTxFuncList.pop(pCurSlipTxBuffer)) {
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
             attach(NULL);
+#else
+            attach(NULL, TxIrq);
+#endif
             return;
         }
         slip_tx_count = 0;
@@ -157,7 +173,11 @@ bool SlipMACDriver::tx_one_byte(void)
             return false;
     }
 
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
     write(&byte, 1);
+#else
+    _base_putc(byte);
+#endif
 
     if (slip_tx_state == SLIP_TX_STATE_END) {
         return false;
@@ -237,13 +257,18 @@ void SlipMACDriver::rxIrq(void)
     }
 
     while (readable()) {
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
         read(buf, 1);
+#else
+        buf[0] = _base_getc();
+#endif
         if (!err) {
             process_rx_byte(buf[0]);
         }
     }
 }
 
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
 void SlipMACDriver::slipIrq(void)
 {
     if (readable()) {
@@ -254,6 +279,7 @@ void SlipMACDriver::slipIrq(void)
         txIrq();
     }
 }
+#endif
 
 int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
 {
@@ -295,7 +321,11 @@ int8_t SlipMACDriver::Slip_Init(uint8_t *mac, uint32_t backhaulBaud)
 
     baud(backhaulBaud);
 
+#if (MBED_VERSION >= MBED_ENCODE_VERSION(6,0,0))
     attach(callback(this, &SlipMACDriver::slipIrq));
+#else
+    attach(callback(this, &SlipMACDriver::rxIrq));
+#endif
 
     _pslipmacdriver->SLIP_IRQ_Thread_Create();
 
